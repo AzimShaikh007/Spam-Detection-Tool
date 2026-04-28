@@ -1,0 +1,10 @@
+.env
+credentials.json
+token.json
+analytics.db
+ngrok.exe
+ngrok.zip
+__pycache__/
+.venv/
+PROMPT.md
+/chrome-extension

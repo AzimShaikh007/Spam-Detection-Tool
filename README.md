@@ -41,9 +41,35 @@ Open your browser and navigate to `http://localhost:8000` to start using the app
 * `telegram_bot.py` - The background worker for Telegram integration.
 * `requirements.txt` - Python dependencies.
 
-## 🤖 Optional: Setup Telegram Bot
-If you want the Telegram bot to work, simply create a file called `.env` in this folder and add your bot token like this:
+## 📧 Gmail API & Chrome Extension Setup
+
+This project now includes a Gmail API integration with a Chrome Extension to highlight spam directly in your inbox.
+
+### 1. Google Cloud Setup
+- Create a Google Cloud project.
+- Enable the **Gmail API** and **Cloud Pub/Sub API**.
+- Create an OAuth 2.0 Client ID (Desktop App) and download the credentials. Save it as `credentials.json` in the root directory.
+
+### 2. Pub/Sub Setup
+- Create a Pub/Sub topic in your Google Cloud Console.
+- Create a **push subscription** for this topic pointing to your backend endpoint (e.g., `https://your-ngrok-url.com/pubsub/push`).
+
+### 3. Required Environment Variables
+Create a `.env` file in the root directory:
 ```
+PUBSUB_TOPIC=projects/your-project-id/topics/your-topic-name
 TELEGRAM_TOKEN=your_bot_token_here
 ```
-When you start the server, the bot will automatically start listening in the background!
+
+### 4. Running the Backend
+Boot up the FastAPI backend (with auto-reload):
+```powershell
+uvicorn main:app --reload
+```
+Note: You may need to use a tool like `ngrok` to expose your local port 8000 to the internet so Google Pub/Sub can reach the webhook.
+
+### 5. Loading the Chrome Extension
+1. Open Google Chrome and go to `chrome://extensions/`.
+2. Enable **Developer mode** in the top right corner.
+3. Click **Load unpacked** and select the `extension` folder in this project directory.
+4. Refresh your Gmail inbox to see the extension in action!

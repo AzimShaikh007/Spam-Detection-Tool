@@ -11,8 +11,12 @@ import re
 from fastapi.middleware.cors import CORSMiddleware
 import spacy
 import telegram_bot
+from gmail_service import setup_watch, remove_spam_label
+from pubsub_handler import router as pubsub_router
+import json
 
 app = FastAPI(title="Spam Detection API")
+app.include_router(pubsub_router)
 
 # Enable CORS for frontend
 app.add_middleware(
@@ -43,13 +47,24 @@ def setup_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            gmail_message_id TEXT UNIQUE,
             message TEXT,
             is_spam BOOLEAN,
             confidence REAL,
+            reasons TEXT,
             is_correct BOOLEAN DEFAULT 1,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    try:
+        c.execute("ALTER TABLE messages ADD COLUMN gmail_message_id TEXT")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_gmail_message_id ON messages (gmail_message_id)")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE messages ADD COLUMN reasons TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -57,6 +72,9 @@ def setup_db():
 def startup_event():
     # Setup SQLite database
     setup_db()
+    
+    # Start Gmail Watch
+    setup_watch()
     
     # Only start bot if token is configured
     token = os.environ.get("TELEGRAM_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN_HERE")
@@ -77,7 +95,47 @@ class MessageResponse(BaseModel):
     message_id: int
 
 class FeedbackRequest(BaseModel):
-    message_id: int
+    message_id: str
+    is_spam: bool
+
+def do_classification(message: str):
+    if model is None or nlp is None:
+        return {"is_spam": False, "confidence": 0.0, "reasons": []}
+    
+    clean_msg = str(message).lower()
+    clean_msg = re.sub(r'[^\w\s]', '', clean_msg).strip()
+    embedding = nlp(clean_msg).vector.reshape(1, -1)
+    
+    prediction = model.predict(embedding)[0]
+    probabilities = model.predict_proba(embedding)[0]
+    confidence = float(probabilities[prediction])
+    is_spam_val = bool(prediction)
+    
+    reasons = []
+    if is_spam_val:
+        reasons.append("Suspicious patterns detected by AI model")
+        if "urgent" in clean_msg or "immediate" in clean_msg or "act now" in clean_msg:
+            reasons.append("Urgency language detected")
+        if "free" in clean_msg or "winner" in clean_msg or "prize" in clean_msg:
+            reasons.append("Prize or money bait")
+        if "password" in clean_msg or "login" in clean_msg or "suspended" in clean_msg:
+            reasons.append("Credential phishing signals")
+            
+    return {"is_spam": is_spam_val, "confidence": confidence, "reasons": reasons}
+
+@app.get("/reason/{message_id}")
+async def get_reason(message_id: str):
+    conn = sqlite3.connect('analytics.db')
+    c = conn.cursor()
+    c.execute("SELECT reasons, confidence FROM messages WHERE gmail_message_id = ?", (message_id,))
+    row = c.fetchone()
+    conn.close()
+    
+    if row:
+        reasons_str, confidence = row
+        reasons = json.loads(reasons_str) if reasons_str else []
+        return {"reasons": reasons, "confidence": confidence}
+    return {"reasons": [], "confidence": 0.0}
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -134,9 +192,13 @@ async def process_feedback(req: FeedbackRequest):
     try:
         conn = sqlite3.connect('analytics.db')
         c = conn.cursor()
-        c.execute("UPDATE messages SET is_correct = 0 WHERE id = ?", (req.message_id,))
+        c.execute("UPDATE messages SET is_correct = 0 WHERE gmail_message_id = ?", (req.message_id,))
         conn.commit()
         conn.close()
+        
+        if not req.is_spam:
+            remove_spam_label(req.message_id)
+            
         return {"status": "success", "message": "Feedback recorded."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
