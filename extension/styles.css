@@ -1,0 +1,43 @@
+.spam-badge {
+  background-color: #cc3a21;
+  color: white;
+  border-radius: 12px;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: default;
+  margin-left: 8px;
+  display: inline-block;
+  vertical-align: middle;
+  position: relative;
+}
+
+.spam-tooltip {
+  background-color: #333;
+  color: white;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 6px 10px;
+  position: absolute;
+  bottom: 120%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  white-space: nowrap;
+  z-index: 1000;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.spam-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #333 transparent transparent transparent;
+}
+
+.spam-badge:hover .spam-tooltip {
+  display: block;
+}
